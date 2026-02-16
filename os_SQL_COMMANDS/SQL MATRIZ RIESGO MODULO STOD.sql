@@ -18,11 +18,6 @@
        ||| CREACION TABLA DE BITACORA |||
        =========================================
        */
-       /*
-       =========================================
-       ||| PRUEBA DE CAMBIO|||
-       =========================================
-       */
 
 		CREATE TABLE IVEMRI_Bitacora_matriz_riesgo (
 		Id INT IDENTITY(1,1) PRIMARY KEY,
@@ -41,75 +36,77 @@
 		ALTER TABLE dbo.Matriz_Riesgo_Individual_26_general_Bitacora
 			ADD 
 				DocEntry INT NULL,
-				NumAtCard NVARCHAR(100) NULL,
-				UsuarioFactura NVARCHAR(100) NULL;
+				NumAtCard NVARCHAR(100) NULL
 
        /*
        =========================================
-       ||| SP MODIFICADO CON -1 QUEMADO A DOCENTRY|||
+       ||| SP PARA REVISION DE FACTURAS|||
        =========================================
        */
 
+		CREATE PROCEDURE IVEMRI_ConsultaMatrizRiesgoFactura
+			@NumeroFactura NVARCHAR(100),
+			@UsuarioSTOD NVARCHAR(100)
+		AS
+		BEGIN
+			SET NOCOUNT ON;
 
-CREATE PROCEDURE IVEMRI_ConsultaMatrizRiesgoFactura
-    @NumeroFactura NVARCHAR(100),
-    @UsuarioSTOD NVARCHAR(100)
-AS
-BEGIN
-    SET NOCOUNT ON;
+			DECLARE @DocEntrySAP INT = NULL; -- Inicializado en NULL para validación precisa
+			DECLARE @cantidad_coincidencias INT = 0;
 
-    DECLARE @DocEntrySAP INT = -1;
-    DECLARE @NumAtCardSAP NVARCHAR(100) = '';
-    
+			-- 1. OBTENER EL DOCENTRY DESDE SAP (SERVIDOR 167)
+			SELECT TOP 1 @DocEntrySAP = DocEntry
+			FROM [128.1.200.167].[SBO_CANELLA].[dbo].[OINV]
+			WHERE NumAtCard = @NumeroFactura;
 
-    SELECT TOP 1 
-        @DocEntrySAP = DocEntry
-    FROM dbo.OINV
-    WHERE NumAtCard = @NumeroFactura; -- O @NumeroFactura según tu campo de búsqueda
+			-- 2. BITÁCORA LOCAL (STOD)
+			INSERT INTO IVEMRI_Bitacora_matriz_riesgo (NumeroFacturaBuscada, DocEntryBuscado, UsuarioSTOD, FechaHoraSolicitud)
+			VALUES (@NumeroFactura, @DocEntrySAP, @UsuarioSTOD, GETDATE());
 
-    -- 3. Registrar la solicitud en la nueva bitácora local STOD (IVEMRI_)
-    INSERT INTO IVEMRI_Bitacora_matriz_riesgo (
-        NumeroFacturaBuscada,
-        DocEntryBuscado,
-        UsuarioSTOD,
-        FechaHoraSolicitud
-    )
-    VALUES (
-        @NumeroFactura,
-        @DocEntrySAP,
-        @UsuarioSTOD,
-        GETDATE()
-    );
+			-- 3. VALIDACIÓN INICIAL: SI NO EXISTE EN SAP
+			IF @DocEntrySAP IS NULL
+			BEGIN
+				SELECT 'SIN DATOS' AS RESPUESTA, 'Factura no existe en SAP' AS Detalle;
+				RETURN;
+			END
 
-    IF @DocEntrySAP = -1
-    BEGIN
-        -- Registrar en la bitácora del 167 el intento fallido
-        EXEC [LINKED_167].[NombreBD].[dbo].[sp_RegistrarBitacora167] 
-             @NombreSP = 'IVEMRI_ConsultaMatrizRiesgoFactura',
-             @Parametros = @NumeroFactura,
-             @Respuesta = 'SIN DATOS EN SAP',
-             @DocEntry = -1,
-             @NumAtCard = '',
-             @Usuario = @UsuarioSTOD;
+			-- 4. EJECUTAR EL PRIMER SP DE ANÁLISIS
+			EXEC [128.1.200.167].[SBO_CANELLA].[dbo].[Reporte_Vehiculos_IVE_Opt_Individual] @DocEntryBuscado = @DocEntrySAP;
 
-        SELECT 'Factura no encontrada en SAP' AS Mensaje, @NumeroFactura AS Factura;
-        RETURN;
-    END
+			-- 5. VALIDACIÓN DE COINCIDENCIAS
+			SELECT @cantidad_coincidencias = COUNT(*)
+			FROM [128.1.200.167].[STOD_SAPBONE].[dbo].[COREP_Facturas]
+			WHERE DocEntry = @DocEntrySAP 
+			  AND CAST(FacturaFecha AS DATE) = CAST(GETDATE() AS DATE);
 
-    -- 5. Obtener detalle de Matriz y consolidar con un JOIN
-    -- Consultamos el detalle (suponiendo una tabla o función en el 167) 
-    -- y lo unimos con la bitácora histórica del 167
-    SELECT 
-        A.DocEntry AS DocEntry_SAP,
-        A.NumAtCard AS Factura_SAP,
-        B.RespuestaSalida AS Detalle_Matriz,
-        B.FechaHoraEjecucion AS Fecha_Registro_Matriz,
-        @UsuarioSTOD AS Solicitante_STOD
-    FROM [LINKED_SAP].[SBO_CANELLA].[dbo].[OINV] A
-    INNER JOIN [LINKED_167].[NombreBD].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora] B
-        ON A.DocEntry = B.DocEntry -- Llave JOIN por DocEntry
-    WHERE A.DocEntry = @DocEntrySAP
-    ORDER BY B.FechaHoraEjecucion DESC;
+			-- 6. SI NO HAY COINCIDENCIAS (INSERTAR CON NUMATCARD VACÍO)
+			IF @cantidad_coincidencias = 0
+			BEGIN
+				INSERT INTO [128.1.200.167].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora] 
+					(NombreSP, ParametrosEntrada, RespuestaSalida, DocEntry, NumAtCard, UsuarioFactura)
+				VALUES (
+					'Matriz_Riesgo_Individual_26_general',
+					CONCAT('{"SIN DATOS","DocEntryBuscado":"', CAST(@DocEntrySAP AS VARCHAR), '"}'),
+					'SIN DATOS',
+					@DocEntrySAP,
+					'', 
+					@UsuarioSTOD
+				);
 
+				SELECT 'SIN DATOS' AS RESPUESTA;
+				GOTO fin; 
+			END
 
-END
+			-- 7. RETORNO EXITOSO PARA LA VISTA
+			SELECT 
+				A.CreateDate,
+				A.DocEntry,
+				A.NumAtCard AS NumeroFactura,
+				@UsuarioSTOD AS UsuarioConsulta,
+				'REPORTE GENERADO EXITOSAMENTE' AS Mensaje
+			FROM [128.1.200.167].[SBO_CANELLA].[dbo].[OINV] A
+			WHERE A.DocEntry = @DocEntrySAP;
+
+		fin:
+			PRINT 'Proceso finalizado';
+		END
