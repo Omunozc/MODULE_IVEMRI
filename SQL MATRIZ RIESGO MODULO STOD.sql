@@ -18,6 +18,11 @@
        ||| CREACION TABLA DE BITACORA |||
        =========================================
        */
+       /*
+       =========================================
+       ||| PRUEBA DE CAMBIO|||
+       =========================================
+       */
 
 		CREATE TABLE IVEMRI_Bitacora_matriz_riesgo (
 		Id INT IDENTITY(1,1) PRIMARY KEY,
@@ -60,9 +65,9 @@ BEGIN
     SELECT TOP 1 
         @DocEntrySAP = DocEntry
     FROM dbo.OINV
-    WHERE NumAtCard = @NumeroFactura; -- O @NumeroFactura seg˙n tu campo de b˙squeda
+    WHERE NumAtCard = @NumeroFactura; -- O @NumeroFactura seg√∫n tu campo de b√∫squeda
 
-    -- 3. Registrar la solicitud en la nueva bit·cora local STOD (IVEMRI_)
+    -- 3. Registrar la solicitud en la nueva bit√°cora local STOD (IVEMRI_)
     INSERT INTO IVEMRI_Bitacora_matriz_riesgo (
         NumeroFacturaBuscada,
         DocEntryBuscado,
@@ -78,7 +83,7 @@ BEGIN
 
     IF @DocEntrySAP = -1
     BEGIN
-        -- Registrar en la bit·cora del 167 el intento fallido
+        -- Registrar en la bit√°cora del 167 el intento fallido
         EXEC [LINKED_167].[NombreBD].[dbo].[sp_RegistrarBitacora167] 
              @NombreSP = 'IVEMRI_ConsultaMatrizRiesgoFactura',
              @Parametros = @NumeroFactura,
@@ -92,8 +97,8 @@ BEGIN
     END
 
     -- 5. Obtener detalle de Matriz y consolidar con un JOIN
-    -- Consultamos el detalle (suponiendo una tabla o funciÛn en el 167) 
-    -- y lo unimos con la bit·cora histÛrica del 167
+    -- Consultamos el detalle (suponiendo una tabla o funci√≥n en el 167) 
+    -- y lo unimos con la bit√°cora hist√≥rica del 167
     SELECT 
         A.DocEntry AS DocEntry_SAP,
         A.NumAtCard AS Factura_SAP,
@@ -105,5 +110,6 @@ BEGIN
         ON A.DocEntry = B.DocEntry -- Llave JOIN por DocEntry
     WHERE A.DocEntry = @DocEntrySAP
     ORDER BY B.FechaHoraEjecucion DESC;
+
 
 END
