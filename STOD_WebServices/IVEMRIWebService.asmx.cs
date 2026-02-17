@@ -16,26 +16,34 @@ namespace STOD_WebServices
     [WebService(Namespace = "http://tempuri.org/")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
-    // Para permitir que se llame a este servicio web desde un script, usando ASP.NET AJAX, quite la marca de comentario de la línea siguiente. 
     // [System.Web.Script.Services.ScriptService]
     public class IVEMRIWebService : System.Web.Services.WebService
     {
-
-
         #region consulta 
-        [WebMethod]
+
+        // Le agregamos una descripción para que sea fácil de entender al publicarlo
+        [WebMethod(Description = "Consulta la matriz de riesgo de una factura en SAP para IVEMRI")]
         public CL_Resultado IVEMRI_ConsultarMatrizRiesgo(List<CL_Diccionario> ListParamsIn)
         {
             CL_Resultado res = new CL_Resultado();
 
-            // CORRECCIÓN: Instanciamos la clase de la DAL (STOD_DAL.IVEMRI_DAL)
-            IVEMRI ds = new IVEMRI();
+            // 1. PREVENCIÓN: Inicializamos la tabla vacía para que la vista nunca reciba un "null" en Datos
+            res.Datos = new DataTable("DatosVacios");
 
-            CL_TipoMensaje Obj_Mensaje = new CL_TipoMensaje();
+            // 2. VALIDACIÓN DEFENSIVA: ¿El front-end nos mandó basura o una lista vacía?
+            if (ListParamsIn == null || ListParamsIn.Count == 0)
+            {
+                res.resultadoEjecucion = false;
+                res.Mensaje = new CL_TipoMensaje { MensajeTipo = 0, MensajeDescripcion = "Error WS: Parámetros de búsqueda vacíos o nulos." };
+                return res; // Retornamos inmediatamente
+            }
 
             try
             {
-                // Ahora 'ds' sí tiene el método porque apunta a la capa DAL
+                // 3. Flujo normal y seguro
+                IVEMRI ds = new IVEMRI();
+                CL_TipoMensaje Obj_Mensaje = new CL_TipoMensaje();
+
                 DataTable dt = ds.IVEMRI_BUSQUEDA(ListParamsIn, out Obj_Mensaje);
 
                 res.Datos = dt;
@@ -44,12 +52,55 @@ namespace STOD_WebServices
             }
             catch (Exception ex)
             {
+                // Si ocurre una caída grave, la encapsulamos elegantemente
                 res.resultadoEjecucion = false;
-                res.Mensaje = new CL_TipoMensaje { MensajeTipo = 0, MensajeDescripcion = ex.Message };
+                res.Mensaje = new CL_TipoMensaje { MensajeTipo = 0, MensajeDescripcion = "Excepción interna del servidor: " + ex.Message };
             }
 
             return res;
         }
+        #endregion
+
+        #region Listado General Paginado
+
+        [WebMethod(Description = "Obtiene el listado general paginado de la bitácora de matriz de riesgo")]
+        public CL_Resultado IVEMRI_ListarBitacoraPaginada(List<CL_Diccionario> ListParamsIn)
+        {
+            CL_Resultado res = new CL_Resultado();
+            res.Datos = new DataTable("DatosPaginados");
+
+            // En un listado general, los parámetros podrían ser opcionales (default página 1)
+            // pero igual validamos la inicialización de la lista
+            if (ListParamsIn == null)
+            {
+                ListParamsIn = new List<CL_Diccionario>();
+            }
+
+            try
+            {
+                IVEMRI ds = new IVEMRI();
+                CL_TipoMensaje Obj_Mensaje = new CL_TipoMensaje();
+
+                // Llamamos al nuevo método que creamos en la DAL
+                DataTable dt = ds.IVEMRI_LISTADO_GENERAL(ListParamsIn, out Obj_Mensaje);
+
+                res.Datos = dt;
+                res.Mensaje = Obj_Mensaje;
+                res.resultadoEjecucion = (Obj_Mensaje.MensajeTipo != 0);
+            }
+            catch (Exception ex)
+            {
+                res.resultadoEjecucion = false;
+                res.Mensaje = new CL_TipoMensaje
+                {
+                    MensajeTipo = 0,
+                    MensajeDescripcion = "Error en el servicio de listado: " + ex.Message
+                };
+            }
+
+            return res;
+        }
+
         #endregion
     }
 }
