@@ -102,5 +102,48 @@ namespace STOD_WebServices
         }
 
         #endregion
+
+        #region Búsqueda Histórica
+
+        [WebMethod(Description = "Consulta el historial de todas las matrices generadas para una factura específica")]
+        public CL_Resultado IVEMRI_ConsultarHistoricoMatriz(List<CL_Diccionario> ListParamsIn)
+        {
+            CL_Resultado res = new CL_Resultado();
+            res.Datos = new DataTable("DatosHistoricosVacios");
+
+            // Validación Defensiva
+            if (ListParamsIn == null || ListParamsIn.Count == 0)
+            {
+                res.resultadoEjecucion = false;
+                res.Mensaje = new CL_TipoMensaje { MensajeTipo = 0, MensajeDescripcion = "Error WS: Parámetros para historial vacíos." };
+                return res;
+            }
+
+            try
+            {
+                IVEMRI ds = new IVEMRI();
+                CL_TipoMensaje Obj_Mensaje = new CL_TipoMensaje();
+
+                // Llamamos al nuevo método que creamos en la DAL para el histórico
+                DataTable dt = ds.IVEMRI_BUSQUEDA_HISTORICA(ListParamsIn, out Obj_Mensaje);
+
+                res.Datos = dt;
+                res.Mensaje = Obj_Mensaje;
+                res.resultadoEjecucion = (Obj_Mensaje.MensajeTipo != 0);
+            }
+            catch (Exception ex)
+            {
+                res.resultadoEjecucion = false;
+                res.Mensaje = new CL_TipoMensaje
+                {
+                    MensajeTipo = 0,
+                    MensajeDescripcion = "Excepción en el servicio histórico: " + ex.Message
+                };
+            }
+
+            return res;
+        }
+
+        #endregion
     }
 }
