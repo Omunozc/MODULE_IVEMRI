@@ -2,11 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
-using System.Web.Services;
-using STOD_BLL;
+using System.Web.UI;
+using System.Web.UI.WebControls;
 using System.Data;
-using STOD_DAL;
-using System.Xml;
 
 namespace STOD_Web
 {
@@ -16,23 +14,39 @@ namespace STOD_Web
         {
             if (!IsPostBack)
                 CargarListadoGeneral();
-
         }
-        #region consultar con SP
+
+        #region Eventos de Botones
+
+        // Botón 1: Consulta y Genera (Proceso Completo/SAP)
         protected void btnConsultar_Click(object sender, EventArgs e)
         {
-            // 1. Si el validador del HTML falla, detenemos todo aquí mismo
+            RealizarProcesoBusqueda("NORMAL");
+        }
+
+        // Botón 2: Búsqueda Histórica (Solo Bitácora)
+        protected void btnHistorico_Click(object sender, EventArgs e)
+        {
+            RealizarProcesoBusqueda("HISTORICO");
+        }
+
+        #endregion
+
+        #region Lógica de Búsqueda Unificada
+        private void RealizarProcesoBusqueda(string tipo)
+        {
+            // 1. Validación de controles de la página
             if (!Page.IsValid) return;
 
-            // 2. Limpiamos espacios basura que haya dejado el usuario
+            // 2. Limpieza de entrada y de interfaz
             string facturaBuscada = txtNumeroFactura.Text.Trim();
-
-            // Limpiamos mensajes y la tabla de consultas anteriores
             lblMensaje.Text = "";
             gvResultado.DataSource = null;
             gvResultado.DataBind();
+            litHtmlMatriz.Text = "";
+            panelMatriz.Visible = false;
 
-            // 3. Validación Defensiva: Longitud mínima
+            // 3. Validación Defensiva de longitud
             if (facturaBuscada.Length < 3)
             {
                 lblMensaje.Text = "⚠️ El número de factura es demasiado corto. Revíselo.";
@@ -42,158 +56,131 @@ namespace STOD_Web
 
             try
             {
-                // 4. Armamos los parámetros para el Web Service
+                // 4. Preparación de parámetros
                 IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[2];
+                parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@NumeroFactura", Valor = facturaBuscada };
+                parametros[1] = new IVEMRIWS.CL_Diccionario
+                {
+                    Nombre = "@UsuarioSTOD",
+                    Valor = Session["USR_Usuario"] != null ? Session["USR_Usuario"].ToString() : "AdminLocal"
+                };
 
-                parametros[0] = new IVEMRIWS.CL_Diccionario();
-                parametros[0].Nombre = "@NumeroFactura";
-                parametros[0].Valor = facturaBuscada;
-
-                parametros[1] = new IVEMRIWS.CL_Diccionario();
-                parametros[1].Nombre = "@UsuarioSTOD";
-                // Si no hay sesión, ponemos un genérico temporal
-                parametros[1].Valor = Session["Usuario"] != null ? Session["Usuario"].ToString() : "AdminLocal";
-
-                // 5. Llamamos al Web Service
+                // 5. Instancia del Web Service
                 IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
-                IVEMRIWS.CL_Resultado resultado = ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
+                IVEMRIWS.CL_Resultado resultado;
 
-                // 6. Evaluamos la respuesta
+                // 6. Selección del método según el botón presionado
+                if (tipo == "HISTORICO")
+                    resultado = ws.IVEMRI_ConsultarHistoricoMatriz(parametros);
+                else
+                    resultado = ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
+
+                // 7. Evaluación de la ejecución
                 if (resultado.resultadoEjecucion)
                 {
-                    // ¿Nos trajo filas de SAP?
                     if (resultado.Datos != null && resultado.Datos.Rows.Count > 0)
                     {
                         gvResultado.DataSource = resultado.Datos;
                         gvResultado.DataBind();
-                        lblMensaje.Text = "✅ Consulta generada exitosamente.";
+                        lblMensaje.Text = (tipo == "HISTORICO") ? "✅ Historial recuperado exitosamente." : "✅ Consulta generada exitosamente.";
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
                     }
                     else
                     {
-                        // Pasó por SQL, pero devolvió la tabla vacía o el "SIN DATOS"
-                        lblMensaje.Text = "ℹ️ No se encontraron coincidencias o la factura no existe.";
+                        // Cambia temporalmente esta línea para ver si el objeto Datos es nulo o solo está vacío
+                        string razon = (resultado.Datos == null) ? "Objeto Datos es Nulo" : "Tabla tiene 0 filas";
+                        lblMensaje.Text = $"ℹ️ No se encontraron coincidencias ({razon}) para: {facturaBuscada}";
                         lblMensaje.ForeColor = System.Drawing.Color.Blue;
                     }
                 }
                 else
                 {
-                    // 1. Asumimos un error genérico por defecto
-                    string detalleError = "Error desconocido al comunicarse con el servidor.";
+                    // Manejo detallado de errores según tu lógica previa
+                    string detalleError = "No se encontraron coincidencias para la factura buscada.";
+                    System.Drawing.Color colorMensaje = System.Drawing.Color.Blue;
+                    string icono = "ℹ️ ";
 
-                    // 2. Verificamos si el Web Service realmente nos mandó el objeto Mensaje
                     if (resultado.Mensaje != null && !string.IsNullOrEmpty(resultado.Mensaje.MensajeDescripcion))
                     {
                         detalleError = resultado.Mensaje.MensajeDescripcion;
+                        colorMensaje = System.Drawing.Color.Red;
+                        icono = "❌ ";
                     }
 
-                    // 3. Mostramos el mensaje de forma segura usando 'detalleError' en lugar de 'ex'
-                    lblMensaje.Text = "❌ Error del Web Service: " + detalleError;
-                    lblMensaje.ForeColor = System.Drawing.Color.Red;
+                    lblMensaje.Text = icono + detalleError;
+                    lblMensaje.ForeColor = colorMensaje;
                 }
             }
             catch (Exception ex)
             {
-                // ¡Aquí SÍ existe la variable 'ex'!
-                lblMensaje.Text = "❌ Error de conexión. Intente más tarde: " + ex.Message;
+                lblMensaje.Text = "❌ Error de conexión: " + ex.Message;
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
         #endregion
-        // Creamos un método reutilizable para llenar el grid
-        /*
-        private void CargarGrid(string filtroFactura)
-        {
-            try
-            {
-                // 1. Preparamos el parámetro de búsqueda
-                IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[1];
-                parametros[0] = new IVEMRIWS.CL_Diccionario();
-                parametros[0].nombre = "@NumeroFactura"; // Cambia este nombre si tu SP de listar usa otro parámetro
-                parametros[0].valor = filtroFactura;
 
-                // 2. Instanciamos el Web Service
-                IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
-
-                // 3. Llamamos al método de listar (OJO: Revisa el paso 2 abajo sobre este nombre)
-                IVEMRIWS.CL_Resultado resultado = ws.IVEMRI_ListarFacturasNormales(parametros);
-
-                if (resultado.resultadoEjecucion)
-                {
-                    DataTable dt = resultado.Datos;
-
-                    if (dt != null && dt.Rows.Count > 0)
-                    {
-                        gvResultado.DataSource = dt;
-                        gvResultado.DataBind();
-                        lblMensaje.Text = "Facturas cargadas (" + dt.Rows.Count + " registros).";
-                    }
-                    else
-                    {
-                        gvResultado.DataSource = null;
-                        gvResultado.DataBind();
-                        lblMensaje.Text = "No se encontraron facturas con ese criterio.";
-                    }
-                }
-                else
-                {
-                    lblMensaje.Text = "Error al cargar la lista: " + resultado.Mensaje.MensajeDescripcion;
-                }
-            }
-            catch (Exception ex)
-            {
-                lblMensaje.Text = "Error inesperado al cargar el grid: " + ex.Message;
-            }
-        }*/
-
+        #region Listado General
         private void CargarListadoGeneral()
         {
             try
             {
-                // 1. Usamos la estructura del Web Service
                 IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[2];
+                parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@Pagina", Valor = "1" };
+                parametros[1] = new IVEMRIWS.CL_Diccionario { Nombre = "@RegistrosPorPagina", Valor = "20" };
 
-                parametros[0] = new IVEMRIWS.CL_Diccionario();
-                parametros[0].Nombre = "@Pagina";
-                parametros[0].Valor = "1";
-
-                parametros[1] = new IVEMRIWS.CL_Diccionario();
-                parametros[1].Nombre = "@RegistrosPorPagina";
-                parametros[1].Valor = "20";
-
-                // 2. Instanciamos TU Web Service (el que acabamos de arreglar)
                 IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
                 IVEMRIWS.CL_Resultado resultado = ws.IVEMRI_ListarBitacoraPaginada(parametros);
 
-                // 3. Evaluamos si el Web Service respondió con éxito
-                if (resultado.resultadoEjecucion)
+                if (resultado.resultadoEjecucion && resultado.Datos != null)
                 {
-                    if (resultado.Datos != null && resultado.Datos.Rows.Count > 0)
-                    {
-                        gvResultado.DataSource = resultado.Datos;
-                        gvResultado.DataBind();
-                        lblMensaje.Text = "✅ Listado cargado correctamente.";
-                        lblMensaje.ForeColor = System.Drawing.Color.Green;
-                    }
-                    else
-                    {
-                        gvResultado.DataSource = null;
-                        gvResultado.DataBind();
-                        lblMensaje.Text = "ℹ️ La bitácora está vacía.";
-                        lblMensaje.ForeColor = System.Drawing.Color.Blue;
-                    }
-                }
-                else
-                {
-                    lblMensaje.Text = "❌ Error: " + resultado.Mensaje.MensajeDescripcion;
-                    lblMensaje.ForeColor = System.Drawing.Color.Red;
+                    gvResultado.DataSource = resultado.Datos;
+                    gvResultado.DataBind();
                 }
             }
             catch (Exception ex)
             {
-                lblMensaje.Text = "❌ Error al cargar la lista: " + ex.Message;
-                lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
+                lblMensaje.Text = "❌ Error al cargar listado: " + ex.Message;
             }
         }
+        #endregion
+
+        #region Evento GridView (Ver Matriz)
+        protected void gvResultado_RowCommand(object sender, GridViewCommandEventArgs e)
+        {
+            if (e.CommandName == "ver_matriz")
+            {
+                try
+                {
+                    int index = Convert.ToInt32(e.CommandArgument);
+                    string numeroFactura = gvResultado.DataKeys[index].Values["NumeroFactura"].ToString();
+
+                    // Lógica Maestra: Recuperar HTML desde el DataKey (memoria)
+                    string htmlDevuelto = gvResultado.DataKeys[index].Values["HTML"] != null ?
+                                         gvResultado.DataKeys[index].Values["HTML"].ToString() : "";
+
+                    if (string.IsNullOrEmpty(htmlDevuelto) || htmlDevuelto == "SIN DATOS" || htmlDevuelto == "SIN HTML")
+                    {
+                        lblMensaje.Text = "ℹ️ Sin diseño de matriz disponible para la factura " + numeroFactura;
+                        lblMensaje.ForeColor = System.Drawing.Color.Orange;
+                        panelMatriz.Visible = false;
+                    }
+                    else
+                    {
+                        litHtmlMatriz.Text = htmlDevuelto;
+                        panelMatriz.Visible = true;
+                        lblMensaje.Text = "✅ Matriz cargada para la factura " + numeroFactura;
+                        lblMensaje.ForeColor = System.Drawing.Color.Green;
+
+                        // Scroll automático al panel de la matriz
+                        ScriptManager.RegisterStartupScript(this, GetType(), "scroll", "location.hash = '#panelDetalle';", true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lblMensaje.Text = "❌ Error al mostrar matriz: " + ex.Message;
+                }
+            }
+        }
+        #endregion
     }
 }
