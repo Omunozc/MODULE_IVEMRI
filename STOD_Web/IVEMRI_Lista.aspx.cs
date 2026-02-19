@@ -13,32 +13,78 @@ namespace STOD_Web
         protected void Page_Load(object sender, EventArgs e)
         {
             if (!IsPostBack)
-                CargarListadoGeneral();
+            {
+                hfModo.Value = "GENERAL";
+                CargarListadoGeneral(1);
+            }
         }
 
-        #region Eventos de Botones
+        #region Eventos de Botones Principales
 
-        // Botón 1: Consulta y Genera (Proceso Completo/SAP)
         protected void btnConsultar_Click(object sender, EventArgs e)
         {
             RealizarProcesoBusqueda("NORMAL");
         }
 
-        // Botón 2: Búsqueda Histórica (Solo Bitácora)
         protected void btnHistorico_Click(object sender, EventArgs e)
         {
             RealizarProcesoBusqueda("HISTORICO");
         }
 
+        protected void btnRefrescar_Click(object sender, EventArgs e)
+        {
+            txtNumeroFactura.Text = string.Empty;
+            panelMatriz.Visible = false;
+            litHtmlMatriz.Text = string.Empty;
+            lblMensaje.Text = "🔄 Listado actualizado y restablecido.";
+            lblMensaje.ForeColor = System.Drawing.Color.Green;
+
+            hfModo.Value = "GENERAL";
+            CargarListadoGeneral(1);
+        }
+
+        protected void btnCerrarMatriz_Click(object sender, EventArgs e)
+        {
+            panelMatriz.Visible = false;
+            litHtmlMatriz.Text = "";
+            lblMensaje.Text = "ℹ️ Vista de matriz cerrada.";
+            lblMensaje.ForeColor = System.Drawing.Color.Gray;
+        }
+
         #endregion
 
-        #region Lógica de Búsqueda Unificada
+        #region Controles de Paginación Personalizada
+
+        protected void btnAnterior_Click(object sender, EventArgs e)
+        {
+            int paginaActual = int.Parse(hfPaginaActual.Value);
+            if (paginaActual > 1)
+            {
+                paginaActual--;
+                if (hfModo.Value == "GENERAL")
+                    CargarListadoGeneral(paginaActual);
+                else
+                    CargarPaginaBusqueda(paginaActual);
+            }
+        }
+
+        protected void btnSiguiente_Click(object sender, EventArgs e)
+        {
+            int paginaActual = int.Parse(hfPaginaActual.Value);
+            paginaActual++;
+            if (hfModo.Value == "GENERAL")
+                CargarListadoGeneral(paginaActual);
+            else
+                CargarPaginaBusqueda(paginaActual);
+        }
+
+        #endregion
+
+        #region Lógica de Búsqueda (Paginada en Memoria)
         private void RealizarProcesoBusqueda(string tipo)
         {
-            // 1. Validación de controles de la página
             if (!Page.IsValid) return;
 
-            // 2. Limpieza de entrada y de interfaz
             string facturaBuscada = txtNumeroFactura.Text.Trim();
             lblMensaje.Text = "";
             gvResultado.DataSource = null;
@@ -46,7 +92,6 @@ namespace STOD_Web
             litHtmlMatriz.Text = "";
             panelMatriz.Visible = false;
 
-            // 3. Validación Defensiva de longitud
             if (facturaBuscada.Length < 3)
             {
                 lblMensaje.Text = "⚠️ El número de factura es demasiado corto. Revíselo.";
@@ -56,8 +101,8 @@ namespace STOD_Web
 
             try
             {
-                // 4. Preparación de parámetros
                 IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[2];
+                // Nota: Si tu proxy WS requiere List<>, usa: new List<IVEMRIWS.CL_Diccionario> { new ... }
                 parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@NumeroFactura", Valor = facturaBuscada };
                 parametros[1] = new IVEMRIWS.CL_Diccionario
                 {
@@ -65,50 +110,38 @@ namespace STOD_Web
                     Valor = Session["USR_Usuario"] != null ? Session["USR_Usuario"].ToString() : "AdminLocal"
                 };
 
-                // 5. Instancia del Web Service
                 IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
                 IVEMRIWS.CL_Resultado resultado;
 
-                // 6. Selección del método según el botón presionado
                 if (tipo == "HISTORICO")
+                    // Si el proxy requiere List, cambia parametros a parametros.ToList()
                     resultado = ws.IVEMRI_ConsultarHistoricoMatriz(parametros);
                 else
                     resultado = ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
 
-                // 7. Evaluación de la ejecución
                 if (resultado.resultadoEjecucion)
                 {
                     if (resultado.Datos != null && resultado.Datos.Rows.Count > 0)
                     {
-                        gvResultado.DataSource = resultado.Datos;
-                        gvResultado.DataBind();
+                        Session["TablaBusqueda"] = resultado.Datos;
+                        hfModo.Value = "BUSQUEDA";
+                        CargarPaginaBusqueda(1);
+
                         lblMensaje.Text = (tipo == "HISTORICO") ? "✅ Historial recuperado exitosamente." : "✅ Consulta generada exitosamente.";
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
                     }
                     else
                     {
-                        // Cambia temporalmente esta línea para ver si el objeto Datos es nulo o solo está vacío
-                        string razon = (resultado.Datos == null) ? "Objeto Datos es Nulo" : "Tabla tiene 0 filas";
-                        lblMensaje.Text = $"ℹ️ No se encontraron coincidencias ({razon}) para: {facturaBuscada}";
+                        lblMensaje.Text = $"ℹ️ No se encontraron coincidencias para: {facturaBuscada}";
                         lblMensaje.ForeColor = System.Drawing.Color.Blue;
+                        btnAnterior.Visible = false; btnSiguiente.Visible = false; lblPaginaActual.Visible = false;
                     }
                 }
                 else
                 {
-                    // Manejo detallado de errores según tu lógica previa
-                    string detalleError = "No se encontraron coincidencias para la factura buscada.";
-                    System.Drawing.Color colorMensaje = System.Drawing.Color.Blue;
-                    string icono = "ℹ️ ";
-
-                    if (resultado.Mensaje != null && !string.IsNullOrEmpty(resultado.Mensaje.MensajeDescripcion))
-                    {
-                        detalleError = resultado.Mensaje.MensajeDescripcion;
-                        colorMensaje = System.Drawing.Color.Red;
-                        icono = "❌ ";
-                    }
-
-                    lblMensaje.Text = icono + detalleError;
-                    lblMensaje.ForeColor = colorMensaje;
+                    lblMensaje.Text = "❌ " + (resultado.Mensaje != null ? resultado.Mensaje.MensajeDescripcion : "Error sin detalle.");
+                    lblMensaje.ForeColor = System.Drawing.Color.Red;
+                    btnAnterior.Visible = false; btnSiguiente.Visible = false; lblPaginaActual.Visible = false;
                 }
             }
             catch (Exception ex)
@@ -117,29 +150,70 @@ namespace STOD_Web
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
+
+        private void CargarPaginaBusqueda(int pagina)
+        {
+            DataTable dtBusqueda = Session["TablaBusqueda"] as DataTable;
+
+            if (dtBusqueda != null)
+            {
+                PagedDataSource pds = new PagedDataSource();
+                pds.DataSource = dtBusqueda.DefaultView;
+                pds.AllowPaging = true;
+                pds.PageSize = 20;
+                pds.CurrentPageIndex = pagina - 1;
+
+                gvResultado.DataSource = pds;
+                gvResultado.DataBind();
+
+                hfPaginaActual.Value = pagina.ToString();
+                lblPaginaActual.Text = "Página " + pagina;
+
+                btnAnterior.Enabled = !pds.IsFirstPage;
+                btnSiguiente.Enabled = !pds.IsLastPage;
+
+                btnAnterior.Visible = true;
+                btnSiguiente.Visible = true;
+                lblPaginaActual.Visible = true;
+            }
+        }
         #endregion
 
-        #region Listado General
-        private void CargarListadoGeneral()
+        #region Listado General (Paginado por SQL)
+        private void CargarListadoGeneral(int pagina)
         {
             try
             {
+                int registrosPorPagina = 20;
+
                 IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[2];
-                parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@Pagina", Valor = "1" };
-                parametros[1] = new IVEMRIWS.CL_Diccionario { Nombre = "@RegistrosPorPagina", Valor = "20" };
+                parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@Pagina", Valor = pagina.ToString() };
+                parametros[1] = new IVEMRIWS.CL_Diccionario { Nombre = "@RegistrosPorPagina", Valor = registrosPorPagina.ToString() };
 
                 IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
+                // Si el proxy requiere List, cambia parametros a parametros.ToList()
                 IVEMRIWS.CL_Resultado resultado = ws.IVEMRI_ListarBitacoraPaginada(parametros);
 
                 if (resultado.resultadoEjecucion && resultado.Datos != null)
                 {
                     gvResultado.DataSource = resultado.Datos;
                     gvResultado.DataBind();
+
+                    hfPaginaActual.Value = pagina.ToString();
+                    lblPaginaActual.Text = "Página " + pagina;
+
+                    btnAnterior.Enabled = (pagina > 1);
+                    btnSiguiente.Enabled = (resultado.Datos.Rows.Count == registrosPorPagina);
+
+                    btnAnterior.Visible = true;
+                    btnSiguiente.Visible = true;
+                    lblPaginaActual.Visible = true;
                 }
             }
             catch (Exception ex)
             {
                 lblMensaje.Text = "❌ Error al cargar listado: " + ex.Message;
+                lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
         #endregion
@@ -154,7 +228,6 @@ namespace STOD_Web
                     int index = Convert.ToInt32(e.CommandArgument);
                     string numeroFactura = gvResultado.DataKeys[index].Values["NumeroFactura"].ToString();
 
-                    // Lógica Maestra: Recuperar HTML desde el DataKey (memoria)
                     string htmlDevuelto = gvResultado.DataKeys[index].Values["HTML"] != null ?
                                          gvResultado.DataKeys[index].Values["HTML"].ToString() : "";
 
@@ -171,13 +244,13 @@ namespace STOD_Web
                         lblMensaje.Text = "✅ Matriz cargada para la factura " + numeroFactura;
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
 
-                        // Scroll automático al panel de la matriz
-                        ScriptManager.RegisterStartupScript(this, GetType(), "scroll", "location.hash = '#panelDetalle';", true);
+                        ScriptManager.RegisterStartupScript(this, GetType(), "scroll", "location.hash = '#panelMatriz';", true);
                     }
                 }
                 catch (Exception ex)
                 {
                     lblMensaje.Text = "❌ Error al mostrar matriz: " + ex.Message;
+                    lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
                 }
             }
         }
