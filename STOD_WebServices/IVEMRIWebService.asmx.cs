@@ -125,7 +125,7 @@ namespace STOD_WebServices
                 CL_TipoMensaje Obj_Mensaje = new CL_TipoMensaje();
 
                 // Llamamos al nuevo método que creamos en la DAL para el histórico
-                DataTable dt = ds.IVEMRI_BUSQUEDA_HISTORICA(ListParamsIn, out Obj_Mensaje);
+                DataTable dt = ds.IVEMRI_HISTORICO(ListParamsIn, out Obj_Mensaje);
 
                 res.Datos = dt;
                 res.Mensaje = Obj_Mensaje;
