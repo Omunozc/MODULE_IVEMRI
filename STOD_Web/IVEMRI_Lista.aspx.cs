@@ -14,8 +14,21 @@ namespace STOD_Web
         {
             if (!IsPostBack)
             {
+                // 1. Limpiamos variables de estado
                 hfModo.Value = "GENERAL";
-                CargarListadoGeneral(1);
+                hfPaginaActual.Value = "1";
+
+                // 2. En lugar de cargar datos, mostramos el mensaje de bienvenida
+                gvResultado.DataSource = null;
+                gvResultado.DataBind();
+
+                lblMensaje.Text = "";
+                lblMensaje.ForeColor = System.Drawing.Color.Blue;
+
+                // 3. Ocultamos los botones de paginación al inicio
+                btnAnterior.Visible = false;
+                btnSiguiente.Visible = false;
+                lblPaginaActual.Visible = false;
             }
         }
 
@@ -36,13 +49,21 @@ namespace STOD_Web
             txtNumeroFactura.Text = string.Empty;
             panelMatriz.Visible = false;
             litHtmlMatriz.Text = string.Empty;
-            lblMensaje.Text = "🔄 Listado actualizado y restablecido.";
-            lblMensaje.ForeColor = System.Drawing.Color.Green;
+
+            gvResultado.DataSource = null;
+            gvResultado.DataBind();
 
             hfModo.Value = "GENERAL";
-            CargarListadoGeneral(1);
-        }
+            hfPaginaActual.Value = "1";
 
+            btnAnterior.Visible = false;
+            btnSiguiente.Visible = false;
+            lblPaginaActual.Visible = false;
+
+            lblMensaje.Text = "";
+            lblMensaje.ForeColor = System.Drawing.Color.Blue;
+
+        }
         protected void btnCerrarMatriz_Click(object sender, EventArgs e)
         {
             panelMatriz.Visible = false;
@@ -111,42 +132,42 @@ namespace STOD_Web
                 };
 
                 IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
-                IVEMRIWS.CL_Resultado resultado;
-
-                if (tipo == "HISTORICO")
-                    // Si el proxy requiere List, cambia parametros a parametros.ToList()
-                    resultado = ws.IVEMRI_ConsultarHistoricoMatriz(parametros);
-                else
-                    resultado = ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
+                IVEMRIWS.CL_Resultado resultado = (tipo == "HISTORICO")
+                    ? ws.IVEMRI_ConsultarHistoricoMatriz(parametros)
+                    : ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
 
                 if (resultado.resultadoEjecucion)
                 {
+                    // VALIDACIÓN CLAVE: Si el SP hizo RETURN sin SELECT, Rows.Count es 0
                     if (resultado.Datos != null && resultado.Datos.Rows.Count > 0)
                     {
                         Session["TablaBusqueda"] = resultado.Datos;
                         hfModo.Value = "BUSQUEDA";
                         CargarPaginaBusqueda(1);
 
-                        lblMensaje.Text = (tipo == "HISTORICO") ? "✅ Historial recuperado exitosamente." : "✅ Consulta generada exitosamente.";
+                        lblMensaje.Text = (tipo == "HISTORICO") ? "✅ Historial recuperado." : "✅ Consulta exitosa.";
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
                     }
                     else
                     {
-                        lblMensaje.Text = $"ℹ️ No se encontraron coincidencias para: {facturaBuscada}";
-                        lblMensaje.ForeColor = System.Drawing.Color.Blue;
-                        btnAnterior.Visible = false; btnSiguiente.Visible = false; lblPaginaActual.Visible = false;
+                        // El SP no devolvió filas (Factura inexistente o sin historial)
+                        string detalle = (resultado.Mensaje != null && !string.IsNullOrEmpty(resultado.Mensaje.MensajeDescripcion))
+                                         ? resultado.Mensaje.MensajeDescripcion
+                                         : "No se encontraron datos para esta factura.";
+
+                        lblMensaje.Text = "ℹ️ " + detalle;
+                        lblMensaje.ForeColor = System.Drawing.Color.Red;
                     }
                 }
                 else
                 {
-                    lblMensaje.Text = "❌ " + (resultado.Mensaje != null ? resultado.Mensaje.MensajeDescripcion : "Error sin detalle.");
+                    lblMensaje.Text = "❌ " + resultado.Mensaje?.MensajeDescripcion;
                     lblMensaje.ForeColor = System.Drawing.Color.Red;
-                    btnAnterior.Visible = false; btnSiguiente.Visible = false; lblPaginaActual.Visible = false;
                 }
             }
             catch (Exception ex)
             {
-                lblMensaje.Text = "❌ Error de conexión: " + ex.Message;
+                lblMensaje.Text = "❌ Error: " + ex.Message;
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
@@ -155,26 +176,47 @@ namespace STOD_Web
         {
             DataTable dtBusqueda = Session["TablaBusqueda"] as DataTable;
 
-            if (dtBusqueda != null)
+            // Validamos que la tabla exista y tenga columnas antes de intentar bindear
+            if (dtBusqueda != null && dtBusqueda.Rows.Count > 0)
             {
-                PagedDataSource pds = new PagedDataSource();
-                pds.DataSource = dtBusqueda.DefaultView;
-                pds.AllowPaging = true;
-                pds.PageSize = 20;
-                pds.CurrentPageIndex = pagina - 1;
+                try
+                {
+                    PagedDataSource pds = new PagedDataSource();
+                    pds.DataSource = dtBusqueda.DefaultView;
+                    pds.AllowPaging = true;
+                    pds.PageSize = 10;
+                    pds.CurrentPageIndex = pagina - 1;
 
-                gvResultado.DataSource = pds;
+                    gvResultado.DataSource = pds;
+                    gvResultado.DataBind();
+
+                    hfPaginaActual.Value = pagina.ToString();
+                    lblPaginaActual.Text = "Página " + pagina;
+
+                    btnAnterior.Enabled = !pds.IsFirstPage;
+                    btnSiguiente.Enabled = !pds.IsLastPage;
+
+                    btnAnterior.Visible = true;
+                    btnSiguiente.Visible = true;
+                    lblPaginaActual.Visible = true;
+                }
+                catch (Exception ex)
+                {
+                    // Si falta una columna, aquí te dirá exactamente cuál es en el mensaje
+                    lblMensaje.Text = "❌ Error en estructura de datos: " + ex.Message;
+                    lblMensaje.ForeColor = System.Drawing.Color.Red;
+                    gvResultado.DataSource = null;
+                    gvResultado.DataBind();
+                }
+            }
+            else
+            {
+                // Si no hay datos, limpiamos el Grid sin que truene
+                gvResultado.DataSource = null;
                 gvResultado.DataBind();
-
-                hfPaginaActual.Value = pagina.ToString();
-                lblPaginaActual.Text = "Página " + pagina;
-
-                btnAnterior.Enabled = !pds.IsFirstPage;
-                btnSiguiente.Enabled = !pds.IsLastPage;
-
-                btnAnterior.Visible = true;
-                btnSiguiente.Visible = true;
-                lblPaginaActual.Visible = true;
+                btnAnterior.Visible = false;
+                btnSiguiente.Visible = false;
+                lblPaginaActual.Visible = false;
             }
         }
         #endregion
@@ -184,17 +226,16 @@ namespace STOD_Web
         {
             try
             {
-                int registrosPorPagina = 20;
+                int registrosPorPagina = 10;
+                IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
 
                 IVEMRIWS.CL_Diccionario[] parametros = new IVEMRIWS.CL_Diccionario[2];
                 parametros[0] = new IVEMRIWS.CL_Diccionario { Nombre = "@Pagina", Valor = pagina.ToString() };
                 parametros[1] = new IVEMRIWS.CL_Diccionario { Nombre = "@RegistrosPorPagina", Valor = registrosPorPagina.ToString() };
 
-                IVEMRIWS.IVEMRIWebService ws = new IVEMRIWS.IVEMRIWebService();
-                // Si el proxy requiere List, cambia parametros a parametros.ToList()
                 IVEMRIWS.CL_Resultado resultado = ws.IVEMRI_ListarBitacoraPaginada(parametros);
 
-                if (resultado.resultadoEjecucion && resultado.Datos != null)
+                if (resultado.resultadoEjecucion && resultado.Datos != null && resultado.Datos.Rows.Count > 0)
                 {
                     gvResultado.DataSource = resultado.Datos;
                     gvResultado.DataBind();
@@ -202,17 +243,29 @@ namespace STOD_Web
                     hfPaginaActual.Value = pagina.ToString();
                     lblPaginaActual.Text = "Página " + pagina;
 
-                    btnAnterior.Enabled = (pagina > 1);
-                    btnSiguiente.Enabled = (resultado.Datos.Rows.Count == registrosPorPagina);
-
                     btnAnterior.Visible = true;
                     btnSiguiente.Visible = true;
                     lblPaginaActual.Visible = true;
+
+                    btnAnterior.Enabled = (pagina > 1);
+                    btnSiguiente.Enabled = (resultado.Datos.Rows.Count == registrosPorPagina);
+                }
+                else
+                {
+                    // Si la tabla viene vacía, limpiamos y damos mensaje amigable
+                    gvResultado.DataSource = null;
+                    gvResultado.DataBind();
+                    lblMensaje.Text = "";
+                    lblMensaje.ForeColor = System.Drawing.Color.Gray;
+
+                    btnAnterior.Visible = false;
+                    btnSiguiente.Visible = false;
+                    lblPaginaActual.Visible = false;
                 }
             }
             catch (Exception ex)
             {
-                lblMensaje.Text = "❌ Error al cargar listado: " + ex.Message;
+                lblMensaje.Text = "❌ Error al conectar con el servicio.";
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
