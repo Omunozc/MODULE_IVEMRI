@@ -48,8 +48,7 @@ namespace STOD_Web
         {
             txtNumeroFactura.Text = string.Empty;
             panelMatriz.Visible = false;
-            litHtmlMatriz.Text = string.Empty;
-
+            iframeMatriz.Attributes["srcdoc"] = string.Empty;
             gvResultado.DataSource = null;
             gvResultado.DataBind();
 
@@ -67,7 +66,7 @@ namespace STOD_Web
         protected void btnCerrarMatriz_Click(object sender, EventArgs e)
         {
             panelMatriz.Visible = false;
-            litHtmlMatriz.Text = "";
+            iframeMatriz.Attributes["srcdoc"] = string.Empty;
             lblMensaje.Text = "ℹ️ Vista de matriz cerrada.";
             lblMensaje.ForeColor = System.Drawing.Color.Gray;
         }
@@ -110,7 +109,7 @@ namespace STOD_Web
             lblMensaje.Text = "";
             gvResultado.DataSource = null;
             gvResultado.DataBind();
-            litHtmlMatriz.Text = "";
+            iframeMatriz.Attributes["srcdoc"] = string.Empty;
             panelMatriz.Visible = false;
 
             if (facturaBuscada.Length < 3)
@@ -292,8 +291,7 @@ namespace STOD_Web
                     }
                     else
                     {
-                        litHtmlMatriz.Text = htmlDevuelto;
-                        panelMatriz.Visible = true;
+                        iframeMatriz.Attributes["srcdoc"] = htmlDevuelto; panelMatriz.Visible = true;
                         lblMensaje.Text = "✅ Matriz cargada para la factura " + numeroFactura;
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
 
