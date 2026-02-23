@@ -1,17 +1,4 @@
-       /*
-       =========================================
-       ||| CREACION TABLA TEMPORAL |||
-       =========================================
-       */
 
-		CREATE TABLE #IVEMRI_Bitacora_matriz_riesgo (
-			Id INT IDENTITY(1,1) PRIMARY KEY,
-				NumeroFacturaBuscada NVARCHAR(100) NULL,
-				DocEntryBuscado INT NULL,
-				UsuarioSTOD NVARCHAR(100) NOT NULL, 
-				FechaHoraSolicitud DATETIME DEFAULT GETDATE()
-
-		);
 
        /*
        =========================================
@@ -24,33 +11,21 @@
 			NumeroFacturaBuscada NVARCHAR(100) NULL,
 			DocEntryBuscado INT NULL,
 			UsuarioSTOD NVARCHAR(100) NOT NULL, 
-			FechaHoraSolicitud DATETIME DEFAULT GETDATE()
+			FechaHoraSolicitud DATETIME DEFAULT GETDATE(),
+			DocEntry INT NULL,
+			NumAtCard NVARCHAR(100) NULL,
+			UsuarioFactura NVARCHAR(100) NULL, 
+			UsuarioCodigo NVARCHAR(100) NULL
 
 		);
 
-		select top 5 * from IVEMRI_Bitacora_matriz_riesgo
-
-       /*
+		       /*
        =========================================
-       ||| MODIFICACION  |||
+       ||| ALTER TABLE BITACORA DE TOMAS|||
        =========================================
        */
-		ALTER TABLE SBO_CANELLA.dbo.Matriz_Riesgo_Individual_26_general_Bitacora
-			ADD 
-				DocEntry INT NULL,
-				NumAtCard NVARCHAR(100) NULL,
-				UsuarioFactura NVARCHAR(100) NULL, 
-				UsuarioCodigo INT NULL
 
-ALTER TABLE SBO_CANELLA.dbo.Matriz_Riesgo_Individual_26_general_Bitacora
-    ALTER COLUMN UsuarioCodigo NVARCHAR(100) NULL; -- Si DocEntry siempre es el ID numérico de SAP, se queda INT
-       /*
-       =========================================
-       ||| MODIFICACION EN 166|||
-       =========================================
-       */
-	   
-	   EXEC ('
+			   EXEC ('
     USE SBO_CANELLA;
     ALTER TABLE dbo.Matriz_Riesgo_Individual_26_general_Bitacora
     ADD 
@@ -58,7 +33,7 @@ ALTER TABLE SBO_CANELLA.dbo.Matriz_Riesgo_Individual_26_general_Bitacora
 				NumAtCard NVARCHAR(100) NULL,
 				UsuarioFactura NVARCHAR(100) NULL, 
 				UsuarioCodigo NVARCHAR(100) NULL
-') AT [128.1.200.166];
+') AT [128.1.200.167];
 
 				/*
 =============================================================================================================================================================================================
@@ -73,6 +48,13 @@ ALTER TABLE SBO_CANELLA.dbo.Matriz_Riesgo_Individual_26_general_Bitacora
        ||| SP PARA REVISION DE FACTURAS|||
        =========================================
        */
+USE [STOD_SAPBONE]
+GO
+/****** Object:  StoredProcedure [dbo].[IVEMRI_ConsultaMatrizRiesgoFactura]    Script Date: 23/02/2026 14:27:53 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
 ALTER PROCEDURE [dbo].[IVEMRI_ConsultaMatrizRiesgoFactura]
     @NumeroFactura NVARCHAR(100),
     @UsuarioSTOD NVARCHAR(100),
@@ -83,66 +65,50 @@ BEGIN
     BEGIN TRY
         SET NOCOUNT ON;
 
-		declare @Numero NVARCHAR(100)  = NULL;
-		DECLARE @COINCIDENCIAS INT = 1;
+        DECLARE @Numero NVARCHAR(100) = NULL;
         DECLARE @DocEntrySAP INT = -1; 
         DECLARE @SAP_UsuarioNombre NVARCHAR(100) = NULL;
-        DECLARE @SAP_UserCode NVARCHAR(100) = NULL; -- Usaremos el USER_CODE alfanumérico
+        DECLARE @SAP_UserCode NVARCHAR(100) = NULL;
 
-        -- =========================================================================
-        -- 1. BUSCAMOS LOS DATOS EN SAP (OINV y OUSR)
-        -- =========================================================================
+        -- 1. BUSCAMOS EN SAP
         SELECT TOP 1 
-			@Numero = o.NumAtCard,
+            @Numero = o.NumAtCard,
             @DocEntrySAP = O.DocEntry,
             @SAP_UserCode = U.USER_CODE,
             @SAP_UsuarioNombre = U.U_NAME 
-        FROM [128.1.200.166].[SBO_CANELLA].[dbo].[OINV] O
-        LEFT JOIN [128.1.200.166].[SBO_CANELLA].[dbo].[OUSR] U ON O.UserSign = U.USERID
+        FROM [128.1.200.167].[SBO_CANELLA].[dbo].[OINV] O
+        LEFT JOIN [128.1.200.167].[SBO_CANELLA].[dbo].[OUSR] U ON O.UserSign = U.USERID
         WHERE O.NumAtCard = @NumeroFactura;
 
-        -- VALIDACIÓN: Si no existe en SAP
+        -- 2. BITÁCORA LOCAL (Rastro del intento)
+        INSERT INTO IVEMRI_Bitacora_matriz_riesgo (FechaHoraSolicitud, UsuarioSTOD, DocEntryBuscado, NumeroFacturaBuscada)
+        VALUES (GETDATE(), @UsuarioSTOD, ISNULL(@DocEntrySAP, -1), @NumeroFactura);
+
+        -- 3. SI NO EXISTE: Avisamos al remoto con -1 y SALIMOS SIN SELECT
         IF @DocEntrySAP IS NULL OR @DocEntrySAP = -1
         BEGIN
-            SELECT 
-                GETDATE() AS FechaHoraEjecucion,
-                @NumeroFactura AS NumeroFactura,
-                @UsuarioSTOD AS STOD,
-                'Factura no encontrada en SAP' AS Mensaje,
-                'SIN DATOS' AS HTML,
-                NULL AS UsuarioSAP_Nombre,
-                NULL AS UsuarioSAP_Codigo;
+            EXEC [128.1.200.167].[SBO_CANELLA].[dbo].[Reporte_Vehiculos_IVE_Opt_Individual] 
+                @DocEntryBuscado = -1, 
+                @NumAtCard = @NumeroFactura, 
+                @U_USER_NAME = @UsuarioSTOD, 
+                @U_CODIGO_SAP = 'ERROR';
+
+            SET @MensajeDescripcion = 'La factura ingresada no existe en SAP.';
+            SET @MensajeTipo = 2; 
             
-            SET @MensajeDescripcion = 'Factura no encontrada en SAP.';
-            SET @MensajeTipo = 2;
-            RETURN;
+            -- NO HACEMOS SELECT AQUÍ para que el GridView quede vacío en el C#
+            RETURN; 
         END
 
-        -- =========================================================================
-        -- 2. EJECUCIÓN DEL REPORTE REMOTO (Genera el HTML)
-        -- =========================================================================
-       EXEC [128.1.200.166].[SBO_CANELLA].[dbo].[Reporte_Vehiculos_IVE_Opt_Individual] @DocEntryBuscado = @DocEntrySAP, @NumAtCard = @Numero, @U_USER_NAME=@SAP_UsuarioNombre, @U_CODIGO_SAP= @SAP_UserCode;
+        -- 4. SI EXISTE: Ejecutamos proceso normal
+        EXEC [128.1.200.167].[SBO_CANELLA].[dbo].[Reporte_Vehiculos_IVE_Opt_Individual] 
+            @DocEntryBuscado = @DocEntrySAP, 
+            @NumAtCard = @Numero, 
+            @U_USER_NAME = @SAP_UsuarioNombre, 
+            @U_CODIGO_SAP = @SAP_UserCode;
 
-        -- =========================================================================
-        -- 3. INSERTAR EN BITÁCORA LOCAL (Incluyendo datos de SAP para el listado)
-        -- =========================================================================
-			INSERT INTO IVEMRI_Bitacora_matriz_riesgo (
-				FechaHoraSolicitud,
-				UsuarioSTOD, 
-				DocEntryBuscado, 
-				NumeroFacturaBuscada
-			)
-			VALUES (
-				GETDATE(),
-				@UsuarioSTOD,          
-				@DocEntrySAP,
-				@NumeroFactura
-			);
-
-        -- =========================================================================
-        -- 4. RESULTADO FINAL PARA LA PANTALLA
-        -- =========================================================================
-        SELECT top 1
+        -- 5. SELECT FINAL: Solo si hay datos válidos
+        SELECT
             FechaHoraEjecucion,
             RespuestaSalida AS HTML,
             @NumeroFactura AS NumeroFactura,
@@ -150,11 +116,11 @@ BEGIN
             'REPORTE GENERADO EXITOSAMENTE' AS Mensaje,
             @SAP_UsuarioNombre AS UsuarioSAP_Nombre,
             @SAP_UserCode AS UsuarioSAP_Codigo
-        FROM [128.1.200.166].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
+        FROM [128.1.200.167].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
         WHERE DocEntry = @DocEntrySAP
-        ORDER BY Id DESC; 
+        ORDER BY Id DESC;
 
-        SET @MensajeDescripcion = 'Transacción completada satisfactoriamente...!!!';
+        SET @MensajeDescripcion = 'Consulta generada exitosamente.';
         SET @MensajeTipo = 1;
 
     END TRY
@@ -169,6 +135,13 @@ END
        ||| SP PARA CONSULTAR SIN EL SP DE TOMAS||
        =========================================
        */
+SE [STOD_SAPBONE]
+GO
+/****** Object:  StoredProcedure [dbo].[IVEMRI_ConsultaMatrizRiesgoHistorico]    Script Date: 23/02/2026 08:59:52 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
 ALTER PROCEDURE [dbo].[IVEMRI_ConsultaMatrizRiesgoHistorico]
    @NumeroFactura NVARCHAR(100),
    @UsuarioSTOD NVARCHAR(100),
@@ -178,82 +151,46 @@ AS
 BEGIN
     BEGIN TRY
         SET NOCOUNT ON;
-
         DECLARE @DocEntrySAP INT = -1; 
         DECLARE @SAP_UsuarioNombre NVARCHAR(100) = NULL;
         DECLARE @SAP_UserCode NVARCHAR(100) = NULL; 
 
-        -- =========================================================================
-        -- 1. BUSCAMOS LOS DATOS EN SAP (OINV y OUSR)
-        -- =========================================================================
+        -- 1. BUSCAMOS LOS DATOS EN SAP
         SELECT TOP 1 
             @DocEntrySAP = O.DocEntry,
             @SAP_UserCode = U.USER_CODE,
             @SAP_UsuarioNombre = U.U_NAME 
-        FROM [128.1.200.166].[SBO_CANELLA].[dbo].[OINV] O
-        LEFT JOIN [128.1.200.166].[SBO_CANELLA].[dbo].[OUSR] U ON O.UserSign = U.USERID
+        FROM [128.1.200.167].[SBO_CANELLA].[dbo].[OINV] O
+        LEFT JOIN [128.1.200.167].[SBO_CANELLA].[dbo].[OUSR] U ON O.UserSign = U.USERID
         WHERE O.NumAtCard = @NumeroFactura;
 
-        -- VALIDACIÓN: Si no existe en SAP
+        -- 2. BITÁCORA
+        INSERT INTO IVEMRI_Bitacora_matriz_riesgo (FechaHoraSolicitud, UsuarioSTOD, DocEntryBuscado, NumeroFacturaBuscada)
+        VALUES (GETDATE(), @UsuarioSTOD, ISNULL(@DocEntrySAP, 0), @NumeroFactura);
+
+        -- 3. VALIDACIÓN: SI NO EXISTE, RETURN SIN SELECT
         IF @DocEntrySAP IS NULL OR @DocEntrySAP = -1
         BEGIN
-            SELECT 
-                GETDATE() AS FechaHoraEjecucion,
-                @NumeroFactura AS NumeroFactura,
-                @UsuarioSTOD AS STOD,
-                'Factura no encontrada en SAP' AS Mensaje,
-                'SIN DATOS' AS HTML,
-                NULL AS UsuarioSAP_Nombre,
-                NULL AS UsuarioSAP_Codigo;
-            
-            SET @MensajeDescripcion = 'Factura no encontrada en SAP.';
+            SET @MensajeDescripcion = 'La factura ingresada no existe en SAP.';
             SET @MensajeTipo = 2;
-            RETURN;
+            RETURN; -- IMPORTANTE: No hay SELECT aquí, el DataTable llegará vacío.
         END
 
-        -- =========================================================================
-        -- 2. INSERTAR EN BITÁCORA LOCAL 
-        -- =========================================================================
-        INSERT INTO IVEMRI_Bitacora_matriz_riesgo (
-            FechaHoraSolicitud,
-            UsuarioSTOD,          
-            DocEntryBuscado, 
-            NumeroFacturaBuscada
-        )
-        VALUES (
-            GETDATE(),
-            @UsuarioSTOD,          
-            @DocEntrySAP,
-            @NumeroFactura
-        );
-
-        -- =========================================================================
-        -- 3. RESULTADO FINAL (PRIORIDAD A TU NUEVA TABLA)
-        -- =========================================================================
-        -- Tu tabla es la base principal. Si hay HTML en SAP, lo trae; si no, pone "SIN DATOS".
+        -- 4. RESULTADO FINAL (Solo si existe)
         SELECT 
-            B.FechaHoraSolicitud AS FechaHoraEjecucion,
-            ISNULL(S.RespuestaSalida, 'SIN DATOS') AS HTML,
-            B.NumeroFacturaBuscada AS NumeroFactura,
-            B.UsuarioSTOD AS STOD,
-            CASE 
-                WHEN S.RespuestaSalida IS NOT NULL THEN 'REPORTE GENERADO EXITOSAMENTE'
-                ELSE 'BÚSQUEDA REGISTRADA (SIN MATRIZ EN SAP)'
-            END AS Mensaje,
-            @SAP_UsuarioNombre AS UsuarioSAP_Nombre,
-            @SAP_UserCode AS UsuarioSAP_Codigo
-        FROM IVEMRI_Bitacora_matriz_riesgo B
-        OUTER APPLY (
-            -- Traemos el HTML más reciente de SAP para ese documento
-            SELECT TOP 1 RespuestaSalida 
-            FROM [128.1.200.166].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
-            WHERE DocEntry = B.DocEntryBuscado
-            ORDER BY Id DESC
-        ) S
-        WHERE B.NumeroFacturaBuscada = @NumeroFactura
-        ORDER BY B.FechaHoraSolicitud DESC; 
+            FechaHoraEjecucion,
+            RespuestaSalida AS HTML,
+            @NumeroFactura AS NumeroFactura,
+            @UsuarioSTOD AS UsuarioSTOD,
+            'HISTORIAL RECUPERADO' AS Mensaje,
+            ISNULL(@SAP_UsuarioNombre, 'N/A') AS UsuarioSAP_Nombre,
+            ISNULL(@SAP_UserCode, 'N/A') AS UsuarioSAP_Codigo
+        FROM [128.1.200.167].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
+        WHERE DocEntry = @DocEntrySAP
+        ORDER BY Id DESC;
 
-        SET @MensajeDescripcion = 'Transacción completada satisfactoriamente...!!!';
+        -- Si el SELECT anterior no devolvió filas, el GridView se manejará en C#
+        SET @MensajeDescripcion = 'Historial cargado satisfactoriamente.';
         SET @MensajeTipo = 1;
 
     END TRY
@@ -262,6 +199,7 @@ BEGIN
         SET @MensajeTipo = 0;
     END CATCH
 END
+
 
 
 				/*
@@ -269,142 +207,76 @@ END
        ||| SP PARA LISTAR LA NUEVA TABLA||
        =========================================
        */
-
-ALTER PROCEDURE [dbo].[IVEMRI_ConsultaMatrizRiesgoHistorico]
-   @NumeroFactura NVARCHAR(100),
-   @UsuarioSTOD NVARCHAR(100),
-   @MensajeTipo INT OUT,
-   @MensajeDescripcion VARCHAR(200) OUT
+CREATE PROCEDURE [dbo].[STOD_ListarFacturasPaginadas]
+    @Pagina INT = 1,          
+    @RegistrosPorPagina INT = 10,
+    @MensajeTipo INT OUT,
+    @MensajeDescripcion VARCHAR(200) OUT
 AS
 BEGIN
-    BEGIN TRY
+    BEGIN TRY 
         SET NOCOUNT ON;
 
-        DECLARE @DocEntrySAP INT = -1; 
-        DECLARE @SAP_UsuarioNombre NVARCHAR(100) = NULL;
-        DECLARE @SAP_UserCode NVARCHAR(100) = NULL; 
-
-        -- =========================================================================
-        -- 1. BUSCAMOS LOS DATOS EN SAP (OINV y OUSR)
-        -- =========================================================================
-        SELECT TOP 1 
-            @DocEntrySAP = O.DocEntry,
-            @SAP_UserCode = U.USER_CODE,
-            @SAP_UsuarioNombre = U.U_NAME 
-        FROM [128.1.200.166].[SBO_CANELLA].[dbo].[OINV] O
-        LEFT JOIN [128.1.200.166].[SBO_CANELLA].[dbo].[OUSR] U ON O.UserSign = U.USERID
-        WHERE O.NumAtCard = @NumeroFactura;
-
-        -- VALIDACIÓN: Si no existe en SAP
-        IF @DocEntrySAP IS NULL OR @DocEntrySAP = -1
-        BEGIN
-            SELECT 
-                GETDATE() AS FechaHoraEjecucion,
-                @NumeroFactura AS NumeroFactura,
-                @UsuarioSTOD AS STOD,
-                'Factura no encontrada en SAP' AS Mensaje,
-                'SIN DATOS' AS HTML,
-                NULL AS UsuarioSAP_Nombre,
-                NULL AS UsuarioSAP_Codigo;
-            
-            SET @MensajeDescripcion = 'Factura no encontrada en SAP.';
-            SET @MensajeTipo = 2;
-            RETURN;
-        END
-
-        -- =========================================================================
-        -- 2. INSERTAR EN BITÁCORA LOCAL 
-        -- =========================================================================
-        INSERT INTO IVEMRI_Bitacora_matriz_riesgo (
-            FechaHoraSolicitud,
-            UsuarioSTOD,          
-            DocEntryBuscado, 
-            NumeroFacturaBuscada
-        )
-        VALUES (
-            GETDATE(),
-            @UsuarioSTOD,          
-            @DocEntrySAP,
-            @NumeroFactura
+        -- 1. Obtenemos los registros locales (Paginación)
+        DECLARE @TempPagina TABLE (
+            DocEntryBuscado INT,
+            NumeroFactura NVARCHAR(100),
+            FechaHoraEjecucion DATETIME,
+            STOD NVARCHAR(100)
         );
 
-        -- =========================================================================
-        -- 3. RESULTADO FINAL (PRIORIDAD A TU NUEVA TABLA)
-        -- =========================================================================
-        -- Tu tabla es la base principal. Si hay HTML en SAP, lo trae; si no, pone "SIN DATOS".
+        INSERT INTO @TempPagina
         SELECT 
-            B.FechaHoraSolicitud AS FechaHoraEjecucion,
-            ISNULL(S.RespuestaSalida, 'SIN DATOS') AS HTML,
-            B.NumeroFacturaBuscada AS NumeroFactura,
-            B.UsuarioSTOD AS STOD,
-            CASE 
-                WHEN S.RespuestaSalida IS NOT NULL THEN 'REPORTE GENERADO EXITOSAMENTE'
-                ELSE 'BÚSQUEDA REGISTRADA (SIN MATRIZ EN SAP)'
-            END AS Mensaje,
-            @SAP_UsuarioNombre AS UsuarioSAP_Nombre,
-            @SAP_UserCode AS UsuarioSAP_Codigo
-        FROM IVEMRI_Bitacora_matriz_riesgo B
-        OUTER APPLY (
-            -- Traemos el HTML más reciente de SAP para ese documento
-            SELECT TOP 1 RespuestaSalida 
-            FROM [128.1.200.166].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
-            WHERE DocEntry = B.DocEntryBuscado
-            ORDER BY Id DESC
-        ) S
-        WHERE B.NumeroFacturaBuscada = @NumeroFactura
-        ORDER BY B.FechaHoraSolicitud DESC; 
+			B.DocEntry,
+            B.NumAtCard,
+			B.FechaHoraEjecucion,
+            B.UsuarioFactura
+            FROM [128.1.200.167].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora] B
+        ORDER BY B.FechaHoraEjecucion DESC
+        OFFSET (@Pagina - 1) * @RegistrosPorPagina ROWS
+        FETCH NEXT @RegistrosPorPagina ROWS ONLY;
 
-        SET @MensajeDescripcion = 'Transacción completada satisfactoriamente...!!!';
+        -- 2. Cruce con la bitácora remota para traer Usuario y HTML
+        SELECT 
+            P.FechaHoraEjecucion,
+            P.NumeroFactura,
+            P.STOD,
+            -- IMPORTANTE: Aquí usamos los nombres de columna de tu tabla remota
+            ISNULL(R.UsuarioFactura, 'SIN DATOS') AS UsuarioSAP_Nombre, 
+            ISNULL(R.UsuarioCodigo, '0') AS UsuarioSAP_Codigo,
+            'REPORTE GENERADO' AS Mensaje,
+            ISNULL(R.RespuestaSalida, 'SIN HTML') AS HTML
+        FROM @TempPagina P
+        OUTER APPLY (
+            -- Buscamos en la tabla matriz_riesgo_individual_26_general_bitacora
+            SELECT TOP 1 
+                B.RespuestaSalida, 
+                B.UsuarioFactura,  -- Verifica que se llame así en el 166
+                B.UsuarioCodigo   -- Verifica que se llame así en el 166
+            FROM [128.1.200.167].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora] B
+            WHERE B.DocEntry = P.DocEntryBuscado
+            ORDER BY B.Id DESC
+        ) R
+        ORDER BY P.FechaHoraEjecucion DESC;
+
+        SET @MensajeDescripcion = 'Listado cargado exitosamente.';
         SET @MensajeTipo = 1;
 
     END TRY
     BEGIN CATCH
         SET @MensajeDescripcion = 'Error: ' + ERROR_MESSAGE();
         SET @MensajeTipo = 0;
+        -- Retorno preventivo para evitar el "pantallazo blanco"
+        SELECT FechaHoraEjecucion, NumeroFactura, STOD, 'ERROR' as UsuarioSAP_Nombre, '0' as UsuarioSAP_Codigo, '' as Mensaje, '' as HTML FROM @TempPagina;
     END CATCH
 END
 
+       /* 
+=============================================================================================================================================================================================
+																		 MODIFICACIONES SP TOMAS
 
-
-
-				/*
-       =========================================
-       |||PRUEBAS GENERALES|
-       =========================================
-       */
-DECLARE @OutTipo INT;
-DECLARE @OutDescripcion VARCHAR(200);
-EXEC [dbo].[STOD_ListarFacturasPaginadas] 1,20, @MensajeTipo = @OutTipo OUT, 
-    @MensajeDescripcion = @OutDescripcion OUT;
-	SELECT @OutTipo AS TipoMensaje, @OutDescripcion AS TextoMensaje;
-
-
-INSERT INTO [SBO_CANELLA].[dbo].[IVEMRI_Bitacora_matriz_riesgo] 
-(FechaHoraSolicitud, DocEntryBuscado, NumeroFacturaBuscada, UsuarioSTOD)
-VALUES 
-(GETDATE(), 101, 'FAC-001', 'OMUNOZ'),
-(GETDATE(), 102, 'FAC-002', 'OMUNOZ');
-
-UPDATE [SBO_CANELLA].[dbo].[IVEMRI_Bitacora_matriz_riesgo]
-SET NumeroFacturaBuscada = '2929037' 
-WHERE DocEntryBuscado = 101;
-
--- Ahora vuelve a ejecutar el SP
-EXEC [dbo].[STOD_ListarFacturasPaginadas] @Pagina = 1, @RegistrosPorPagina = 10;
-
-
-
-		declare @codigo INT, @msg varchar(200)
-		EXEC [dbo].[IVEMRI_ConsultaMatrizRiesgoFactura] '40055','omunoz', @codigo OUT, @msg OUT
-
-		select @codigo, @msg
-
-
-
-
-       /* =========================================================
-       MODIFICACIONES SP TOMAS
-       ========================================================= */
+=============================================================================================================================================================================================
+*/
 
 
        Set @Destinatarios = 'tmorales@canella.com.gt;';
@@ -422,7 +294,7 @@ EXEC [dbo].[STOD_ListarFacturasPaginadas] @Pagina = 1, @RegistrosPorPagina = 10;
         );
 
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
        DECLARE @cantidad_coincidencias INT = 0;
 
@@ -449,7 +321,7 @@ EXEC [dbo].[STOD_ListarFacturasPaginadas] @Pagina = 1, @RegistrosPorPagina = 10;
 
               goto fin; 
        END
-	   -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ALTER   PROCEDURE [dbo].[Reporte_Vehiculos_IVE_Opt_Individual]
 (
     @DocEntryBuscado INT,      
@@ -458,3 +330,94 @@ ALTER   PROCEDURE [dbo].[Reporte_Vehiculos_IVE_Opt_Individual]
 	@U_CODIGO_SAP nvarchar(100)
 
 )
+
+*/
+
+/*============================================================================
+Comentar esta parte del SP 
+==============================================================================
+*/
+       /* =========================================================
+       END PRUEBAS TEMPORALES
+       ========================================================= 
+
+       IF @Html IS NOT NULL AND @Html <> ''
+       BEGIN
+              EXEC  msdb.dbo.sp_send_dbmail 
+                     @profile_name     = 'MatrizDeRiesgo', 
+                     -- @profile_name     = 'SupplierPayment', 
+                     @recipients       = @Destinatarios,
+                     @copy_recipients  = @CCopia,
+                     @body_format      = 'HTML',
+                     @subject          = @Asunto,
+                     @body             = @Html;  
+       END*/
+
+/*
+
+=============================================================================================================================================================================================
+
+																Pruebas
+=============================================================================================================================================================================================
+*/
+
+/*============================================================================
+Consultar directamente a las bases de datos 
+==============================================================================
+*/
+
+select  * from 
+IVEMRI_Bitacora_matriz_riesgo i
+order by FechaHoraSolicitud desc;
+
+select top 5 * from 
+ [128.1.200.166].[SBO_CANELLA].[dbo].[Matriz_Riesgo_Individual_26_general_Bitacora]
+ where DocEntry = 48
+order by FechaHoraEjecucion desc;
+
+/*============================================================================
+Insertar factura quemandole datos al sp
+==============================================================================
+*/
+select top 50 *
+ from [128.1.200.166].[SBO_CANELLA].[dbo].[oinv] 
+
+
+
+/*============================================================================
+Insertar factura quemandole datos al sp
+==============================================================================
+*/
+
+DECLARE @Tipo INT,
+        @Descripcion VARCHAR(200);
+
+EXEC dbo.IVEMRI_ConsultaMatrizRiesgoFactura
+    @NumeroFactura = 'DD3A5FC1-2087666662',   
+    @UsuarioSTOD = 'USUARIO_TEST',
+    @MensajeTipo = @Tipo OUTPUT,
+    @MensajeDescripcion = @Descripcion OUTPUT;
+
+SELECT 
+    @Tipo AS MensajeTipo,
+    @Descripcion AS MensajeDescripcion;
+
+/*============================================================================
+Consultar MunAtCard Disponibles en el server 166 en este caso
+==============================================================================
+*/
+
+	select top 50 *
+ from [128.1.200.166].[SBO_CANELLA].[dbo].[oinv] 
+
+ -- tomar el NumAtCard 
+
+
+ --no mostrar nada, solo si se le da a un boton 🆗
+ -- añadirle preloader🆗
+ -- solo sobre bitacora la lista 🆗
+
+
+/*
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
