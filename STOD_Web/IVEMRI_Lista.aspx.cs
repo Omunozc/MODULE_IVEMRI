@@ -67,7 +67,7 @@ namespace STOD_Web
         {
             panelMatriz.Visible = false;
             iframeMatriz.Attributes["srcdoc"] = string.Empty;
-            lblMensaje.Text = "ℹ️ Vista de matriz cerrada.";
+            lblMensaje.Text = "Vista de matriz cerrada.";
             lblMensaje.ForeColor = System.Drawing.Color.Gray;
         }
 
@@ -114,7 +114,7 @@ namespace STOD_Web
 
             if (facturaBuscada.Length < 3)
             {
-                lblMensaje.Text = "⚠️ El número de factura es demasiado corto. Revíselo.";
+                lblMensaje.Text = "El número de factura es demasiado corto. Revíselo.";
                 lblMensaje.ForeColor = System.Drawing.Color.Orange;
                 return;
             }
@@ -144,7 +144,7 @@ namespace STOD_Web
                         hfModo.Value = "BUSQUEDA";
                         CargarPaginaBusqueda(1);
 
-                        lblMensaje.Text = (tipo == "HISTORICO") ? "✅ Historial recuperado." : "✅ Consulta exitosa.";
+                        lblMensaje.Text = (tipo == "HISTORICO") ? " Historial recuperado." : " Consulta exitosa.";
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
                     }
                     else
@@ -154,19 +154,19 @@ namespace STOD_Web
                                          ? resultado.Mensaje.MensajeDescripcion
                                          : "No se encontraron datos para esta factura.";
 
-                        lblMensaje.Text = "ℹ️ " + detalle;
+                        lblMensaje.Text = " " + detalle;
                         lblMensaje.ForeColor = System.Drawing.Color.Red;
                     }
                 }
                 else
                 {
-                    lblMensaje.Text = "❌ " + resultado.Mensaje?.MensajeDescripcion;
+                    lblMensaje.Text = " " + resultado.Mensaje?.MensajeDescripcion;
                     lblMensaje.ForeColor = System.Drawing.Color.Red;
                 }
             }
             catch (Exception ex)
             {
-                lblMensaje.Text = "❌ Error: " + ex.Message;
+                lblMensaje.Text = " Error: " + ex.Message;
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
@@ -202,7 +202,7 @@ namespace STOD_Web
                 catch (Exception ex)
                 {
                     // Si falta una columna, aquí te dirá exactamente cuál es en el mensaje
-                    lblMensaje.Text = "❌ Error en estructura de datos: " + ex.Message;
+                    lblMensaje.Text = " Error en estructura de datos: " + ex.Message;
                     lblMensaje.ForeColor = System.Drawing.Color.Red;
                     gvResultado.DataSource = null;
                     gvResultado.DataBind();
@@ -264,7 +264,7 @@ namespace STOD_Web
             }
             catch (Exception ex)
             {
-                lblMensaje.Text = "❌ Error al conectar con el servicio.";
+                lblMensaje.Text = " Error al conectar con el servicio.";
                 lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
             }
         }
@@ -285,14 +285,14 @@ namespace STOD_Web
 
                     if (string.IsNullOrEmpty(htmlDevuelto) || htmlDevuelto == "SIN DATOS" || htmlDevuelto == "SIN HTML")
                     {
-                        lblMensaje.Text = "ℹ️ Sin diseño de matriz disponible para la factura " + numeroFactura;
+                        lblMensaje.Text = "Sin diseño de matriz disponible para la factura " + numeroFactura;
                         lblMensaje.ForeColor = System.Drawing.Color.Orange;
                         panelMatriz.Visible = false;
                     }
                     else
                     {
                         iframeMatriz.Attributes["srcdoc"] = htmlDevuelto; panelMatriz.Visible = true;
-                        lblMensaje.Text = "✅ Matriz cargada para la factura " + numeroFactura;
+                        lblMensaje.Text = "Matriz cargada para la factura " + numeroFactura;
                         lblMensaje.ForeColor = System.Drawing.Color.Green;
 
                         ScriptManager.RegisterStartupScript(this, GetType(), "scroll", "location.hash = '#panelMatriz';", true);
@@ -300,7 +300,7 @@ namespace STOD_Web
                 }
                 catch (Exception ex)
                 {
-                    lblMensaje.Text = "❌ Error al mostrar matriz: " + ex.Message;
+                    lblMensaje.Text = "Error al mostrar matriz: " + ex.Message;
                     lblMensaje.ForeColor = System.Drawing.Color.DarkRed;
                 }
             }

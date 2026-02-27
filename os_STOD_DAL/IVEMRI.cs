@@ -29,7 +29,7 @@ namespace STOD_DAL
 
                 DAL DAC = new DAL();
                 string Procedimiento = "IVEMRI_ConsultaMatrizRiesgoFactura";
-                string conectionStringNombre = "Conn_STOD";
+                string conectionStringNombre = "ServidorCanellaService";
 
                 dt = DAC.EjecutarQueryPorPAConRetorno(Procedimiento, conectionStringNombre, ListParamsIn, out Obj_Mensaje);
             }
@@ -63,7 +63,7 @@ namespace STOD_DAL
                 DAL DAC = new DAL();
                 // Usamos el nuevo SP que creamos
                 string Procedimiento = "STOD_ListarFacturasPaginadas";
-                string conectionStringNombre = "Conn_STOD";
+                string conectionStringNombre = "ServidorCanellaService";
 
                 // Ejecutamos usando tu arquitectura existente
                 dt = DAC.EjecutarQueryPorPAConRetorno(Procedimiento, conectionStringNombre, ListParamsIn, out Obj_Mensaje);
@@ -95,7 +95,7 @@ namespace STOD_DAL
                 DAL DAC = new DAL();
                 // ESTE ES EL CAMBIO CLAVE: El SP de histórico
                 string Procedimiento = "IVEMRI_ConsultaMatrizRiesgoHistorico";
-                string conectionStringNombre = "Conn_STOD";
+                string conectionStringNombre = "ServidorCanellaService";
 
                 dt = DAC.EjecutarQueryPorPAConRetorno(Procedimiento, conectionStringNombre, ListParamsIn, out Obj_Mensaje);
             }

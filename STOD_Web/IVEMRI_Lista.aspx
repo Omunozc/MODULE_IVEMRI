@@ -1,7 +1,7 @@
 <%@ Page Title="" Language="C#" MasterPageFile="~/STODpla.Master" AutoEventWireup="true" CodeBehind="IVEMRI_Lista.aspx.cs" Inherits="STOD_Web.IVEMRI_Lista" %>
 
 <asp:Content ID="Content1" ContentPlaceHolderID="ContentPlaceHolder1" runat="server">
-    
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style type="text/css">
         /* --- 1. PADDING Y ESTRUCTURA --- */
@@ -136,16 +136,16 @@
 
         <div class="card shadow-sm card-original">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0" style="color: white;">Filtro de Búsqueda</h5>
+                <h5 class="mb-0" style="color: white;">Filtro de Busqueda</h5>
             </div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-9 col-lg-8">
-                        <asp:Label ID="lblFactura" runat="server" Text="Número de Factura:" Font-Bold="true"></asp:Label>
+                        <asp:Label ID="lblFactura" runat="server" Text="Numero de Factura:" Font-Bold="true"></asp:Label>
                         <div style="display: flex; gap: 10px; margin-top: 5px;">
                             <asp:TextBox ID="txtNumeroFactura" runat="server" CssClass="form-control" placeholder="Ingrese factura..." style="flex: 1; min-width: 200px;"></asp:TextBox> 
         
-                            <asp:Button ID="btnHistorico" runat="server" Text="Histórico" CssClass="btn btn-primary" 
+                            <asp:Button ID="btnHistorico" runat="server" Text="Historico" CssClass="btn btn-primary" 
                                 ValidationGroup="GrupoBusqueda" OnClick="btnHistorico_Click" 
                                 OnClientClick="return ejecutarBloqueo(this, '...', true);" />
 
@@ -160,7 +160,7 @@
                             </asp:LinkButton>
 
                         </div>
-                        <asp:RequiredFieldValidator ID="rfvFactura" runat="server" ControlToValidate="txtNumeroFactura" ErrorMessage="* Por favor ingrese un número de factura." ForeColor="Red" ValidationGroup="GrupoBusqueda" Display="Dynamic" CssClass="small"></asp:RequiredFieldValidator>
+                        <asp:RequiredFieldValidator ID="rfvFactura" runat="server" ControlToValidate="txtNumeroFactura" ErrorMessage="* Por favor ingrese un numero de factura." ForeColor="Red" ValidationGroup="GrupoBusqueda" Display="Dynamic" CssClass="small"></asp:RequiredFieldValidator>
                     </div>
                 </div>
             </div>
@@ -212,7 +212,7 @@
             <asp:Button ID="btnAnterior" runat="server" Text="&laquo; Anterior" CssClass="btn btn-outline-primary btn-sm" 
                 OnClick="btnAnterior_Click" Enabled="false" OnClientClick="return ejecutarBloqueo(this, '...', false);" />
             
-            <asp:Label ID="lblPaginaActual" runat="server" Text="Página 1" Font-Bold="true" CssClass="text-muted small"></asp:Label>
+            <asp:Label ID="lblPaginaActual" runat="server" Text="Pagina 1" Font-Bold="true" CssClass="text-muted small"></asp:Label>
             
             <asp:Button ID="btnSiguiente" runat="server" Text="Siguiente &raquo;" CssClass="btn btn-outline-primary btn-sm" 
                 OnClick="btnSiguiente_Click" OnClientClick="return ejecutarBloqueo(this, '...', false);" />
@@ -296,7 +296,7 @@
                     }, 1000);
 
                 } catch (e) {
-                    alert("Error al procesar la impresión.");
+                    alert("Error al procesar la impresion.");
                     console.error(e);
                 }
             }
