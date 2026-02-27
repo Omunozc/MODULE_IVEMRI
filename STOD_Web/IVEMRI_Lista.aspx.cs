@@ -135,7 +135,7 @@ namespace STOD_Web
                     ? ws.IVEMRI_ConsultarHistoricoMatriz(parametros)
                     : ws.IVEMRI_ConsultarMatrizRiesgo(parametros);
 
-                if (resultado.resultadoEjecucion)
+                if (resultado.resultadoEjecucion && resultado.Mensaje.MensajeTipo.ToString().Equals("1"))
                 {
                     // VALIDACIÓN CLAVE: Si el SP hizo RETURN sin SELECT, Rows.Count es 0
                     if (resultado.Datos != null && resultado.Datos.Rows.Count > 0)
